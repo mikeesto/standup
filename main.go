@@ -15,7 +15,7 @@ import (
 
 const openRouterURL = "https://openrouter.ai/api/v1/chat/completions"
 
-const model = "openai/gpt-oss-120b:free"
+const model = "openrouter/free"
 
 type Message struct {
 	Role    string `json:"role"`
