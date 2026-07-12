@@ -29,6 +29,7 @@ type ChatRequest struct {
 }
 
 type ChatResponse struct {
+	Model   string `json:"model"`
 	Choices []struct {
 		Message struct {
 			Content string `json:"content"`
@@ -160,7 +161,12 @@ Yesterday:
 		return "", fmt.Errorf("no choices in response: %s", string(respBytes))
 	}
 
-	return strings.TrimSpace(chatResp.Choices[0].Message.Content), nil
+	summary := strings.TrimSpace(chatResp.Choices[0].Message.Content)
+	if chatResp.Model != "" {
+		summary += fmt.Sprintf("\n\n[%s]", chatResp.Model)
+	}
+
+	return summary, nil
 }
 
 func main() {
