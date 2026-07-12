@@ -1,6 +1,6 @@
 # standup
 
-A Go CLI that reads your last 24 hours of git commits and uses an LLM (via OpenRouter) to generate a standup summary.
+A Go CLI that reads your recent git commits and uses an LLM (via OpenRouter) to generate a standup summary.
 
 ## Setup
 
@@ -14,12 +14,17 @@ export OPENROUTER_MACBOOK_KEY=your_key_here
 
 ```bash
 # Build a binary and put it on your PATH
-go build -o standup main.go
+go build -o standup .
 mv standup /usr/local/bin/
 
 # Then from any git repo:
 standup
+
+# Include the last three rolling 24-hour periods:
+standup --days 3
 ```
+
+`--days` defaults to `1` and must be at least `1`.
 
 ## Output
 

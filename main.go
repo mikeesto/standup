@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -38,7 +39,7 @@ type ChatResponse struct {
 	} `json:"error,omitempty"`
 }
 
-func getGitCommits() (string, error) {
+func getGitCommits(days int) (string, error) {
 	emailCmd := exec.Command("git", "config", "user.email")
 	emailOut, err := emailCmd.Output()
 	if err != nil {
@@ -48,7 +49,7 @@ func getGitCommits() (string, error) {
 
 	logCmd := exec.Command(
 		"git", "log",
-		"--since=24 hours ago",
+		fmt.Sprintf("--since=%d days ago", days),
 		fmt.Sprintf("--author=%s", email),
 		"--pretty=format:- %s (%h)",
 	)
@@ -63,8 +64,26 @@ func getGitCommits() (string, error) {
 	return strings.TrimSpace(string(logOut)), nil
 }
 
-func summarizeWithLLM(commits string, apiKey string) (string, error) {
-	yesterday := time.Now().AddDate(0, 0, -1).Format("Monday, January 2")
+func periodDescription(days int) string {
+	if days == 1 {
+		return "last 24 hours"
+	}
+	return fmt.Sprintf("last %d days", days)
+}
+
+func summarizeWithLLM(commits string, apiKey string, days int) (string, error) {
+	endDate := time.Now()
+	startDate := endDate.AddDate(0, 0, -days)
+
+	periodHeading := fmt.Sprintf(
+		"Last %d days (%s – %s)",
+		days,
+		formatDateWithOrdinal(startDate),
+		formatDateWithOrdinal(endDate),
+	)
+	if days == 1 {
+		periodHeading = fmt.Sprintf("Yesterday (%s)", formatDateWithOrdinal(startDate))
+	}
 
 	// System prompt defines the persona, rules, and examples
 	systemPrompt := fmt.Sprintf(`You are a developer providing a daily standup update.
@@ -78,7 +97,7 @@ RULES:
 5. Output plain text, formatted exactly as requested.
 
 FORMAT:
-Yesterday (%s):
+%s:
 - <summarized change 1>
 - <summarized change 2>
 
@@ -90,14 +109,14 @@ EXAMPLE INPUT:
 EXAMPLE OUTPUT:
 Yesterday:
 - Implemented uploader management (create, edit, delete, fetch) across ddpconfig and participant UI
-- Wired up briefing and debriefing to the participant UI`, yesterday)
+- Wired up briefing and debriefing to the participant UI`, periodHeading)
 
 	reqBody := ChatRequest{
 		Model:       model,
 		Temperature: 0.2,
 		Messages: []Message{
 			{Role: "system", Content: systemPrompt},
-			{Role: "user", Content: fmt.Sprintf("Here are my commits from the last 24 hours:\n\n%s", commits)},
+			{Role: "user", Content: fmt.Sprintf("Here are my commits from the %s:\n\n%s", periodDescription(days), commits)},
 		},
 	}
 
@@ -145,23 +164,31 @@ Yesterday:
 }
 
 func main() {
+	days := flag.Int("days", 1, "number of rolling 24-hour periods of commits to include")
+	flag.Parse()
+
+	if *days < 1 {
+		fmt.Fprintln(os.Stderr, "Error: --days must be at least 1")
+		os.Exit(1)
+	}
+
 	apiKey := os.Getenv("OPENROUTER_MACBOOK_KEY")
 	if apiKey == "" {
 		fmt.Fprintln(os.Stderr, "Error: OPENROUTER_MACBOOK_KEY environment variable is not set")
 		os.Exit(1)
 	}
 
-	fmt.Println("Standup summary (last 24 hours)")
+	fmt.Printf("Standup summary (%s)\n", periodDescription(*days))
 	fmt.Println("--------------------------------")
 
-	commits, err := getGitCommits()
+	commits, err := getGitCommits(*days)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error getting git commits: %v\n", err)
 		os.Exit(1)
 	}
 
 	if commits == "" {
-		fmt.Println("No commits found in the last 24 hours.")
+		fmt.Printf("No commits found in the %s.\n", periodDescription(*days))
 		os.Exit(0)
 	}
 
@@ -171,7 +198,7 @@ func main() {
 	fmt.Println("Summarising with AI...")
 	fmt.Println()
 
-	summary, err := summarizeWithLLM(commits, apiKey)
+	summary, err := summarizeWithLLM(commits, apiKey, *days)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error summarizing commits: %v\n", err)
 		os.Exit(1)
